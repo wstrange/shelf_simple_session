@@ -1,0 +1,6 @@
+name: shelf_simple_session
+description: A sample command-line application
+dependencies:
+  crypto: '>=0.9.0 <1.0.0'
+  logging: '>=0.9.1 <1.0.0'
+  shelf: '>=0.5.4'

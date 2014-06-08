@@ -1,7 +1,7 @@
 name: shelf_simple_session
 version: 0.1.0
 author: warren.strange@gmail.com
-description: A sample command-line application
+description: A simple session manager for shelf middleware
 homepage: https://github.com/wstrange/shelf_simple_session
 dependencies:
   crypto: '>=0.9.0 <1.0.0'

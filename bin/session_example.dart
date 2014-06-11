@@ -28,7 +28,7 @@ void main() {
     return new shelf.Response.ok("ping counter=$counter");
   }
 
-  var sm  = new SimpleSessionManager();
+  var sm  = new SimpleSessionStore();
 
   var handler = const shelf.Pipeline()
       .addMiddleware(shelf.logRequests())

@@ -16,90 +16,85 @@ var _logger = new Logger("shelf_simple_session");
 
 
 /**
- * Simple Session Management. Really just a hashmap that is keyed by
- * the session id .
- * This is in memory, not persistent across VM restarts, and does not work across isolates.
+ * A simple [SessionStore] that uses an in memory Map for session data. The Map is
+ * not replicated across isolates or other VM instances and will not survive server restarts.
  *
- * todo: implement session map purging. We don't actually do this right now....
+ * todo: implement a smarter way of purging expired sessions
  * todo: Remove dependency on dart:io when shelf has cookie support
  *  [https://code.google.com/p/dart/issues/detail?id=18845]
+ * todo: implement encrypted map entries
  */
-class SimpleSessionManager extends SessionManager {
-  int _sessionLifeSeconds; // session lifetime in seconds
+class SimpleSessionStore extends SessionStore {
   String _sessionCookieName;
-  String get sessionCookieName => _sessionCookieName;
+  //String get sessionCookieName => _sessionCookieName;
   Timer _sessionTimer;
   // Session Map - keyed by session id
   Map<String,Session> _sessionMap = {};
+
+  // todo:
   // Session expiry Map - sorted and keyed by Session expiry time.
-  Map<DateTime,Session> _timeoutMap = new SplayTreeMap<DateTime,Session>();
-
-
-
+  ///Map<DateTime,Session> _timeoutMap = new SplayTreeMap<DateTime,Session>();
 
 
    static var DURATION = const Duration(seconds:60);
 
-   Timer startSessionTimer() {
+   Timer _startSessionTimer() {
      return new Timer.periodic(DURATION,  (Timer t) => _maintainSessions() );
    }
 
 
    // periodically purge expired sessions
-   // todo: this is terribly inefficient. Use a better data structure that is sorted by
+   // todo: this is simple but terribly inefficient. Use a better data structure that is sorted by
    // expiration date. The timer should run only when the next session is set to expire
   _maintainSessions() {
     _logger.finest("maintainSession");
     _sessionMap.keys
       .where( (k) => _sessionMap[k].isExpired())
       .toList()
-      .forEach( (s) => deleteSession(s));
-  }
-
-  deleteSession(String sessionId) {
-    _logger.finest("Deleting session $sessionId");
-    _sessionMap.remove(sessionId);
+      .forEach( (s) => destroySession(s));
   }
 
 
   /**
-   * Create a new Simple Session Manager with optional overrides for
-   * [sessionIdleTimeSeconds] - the time the session can be idle,
-   * [sessionLifeTimeSeconds]  the time in seconds that session stays alive for
+   * Create a new Simple Store with optional overrides for
+   * [sessionIdleTime] - the time the session can be idle,
+   * [sessionLifeTime]  the maximum time the session stays alive for
    * [cookieName] the name of the cookie that will be used to store the session id. Defaults to
    * DARTSIMPLESESSION.
    *
    */
 
-
-  SimpleSessionManager({Duration sessionIdleTime: const Duration(seconds:60),
+  SimpleSessionStore({Duration sessionIdleTime: const Duration(seconds:60),
               Duration sessionLifeTime : const Duration(seconds:3600),
-              String cookieName : _SESSION_COOKIE})
-              :super(sessionIdleTime, sessionLifeTime) {
+              String cookieName : _SESSION_COOKIE,
+              SessionCallback onTimeout,
+              SessionCallback onDestroy})
+              :super(sessionIdleTime, sessionLifeTime, onTimeout: onTimeout, onDestroy:onDestroy) {
     _sessionCookieName = cookieName;
-    _sessionTimer = startSessionTimer();
+    _sessionTimer = _startSessionTimer();
   }
 
- // need to lookup session by string id, expiry time...
-
-
-  deleteRequestSession(shelf.Request request) {
-    var session = request.context[CTX_SESSION_KEY];
-    this._sessionMap.remove(session.id);
+  // todo - should this set a cookie with 0 expiry time?
+  destroySession(Session session) {
+    var sess = this._sessionMap.remove(session.id);
+    if( sess != null ) {
+      if( this.onDestroy != null)
+        this.onDestroy(sess);
+    }
   }
 
   /**
    * Create a session cookie to send to the users browser.
    * TODO: Replace with shelf cookie class when available
    */
-  Cookie makeSessionCookie(shelf.Request req, Session session) {
-    var c = new Cookie(sessionCookieName, session.id);
+  Cookie _makeSessionCookie(shelf.Request req, Session session) {
+    var c = new Cookie(_sessionCookieName, session.id);
     c.path = '/'; // the session cookie should be for all paths and subpaths
     // should we specify the domain or let it default?
     //c.domain = req.requestedUri.host;
     c.httpOnly = true; // prevent javascript, etc. from reading cookie
     // expiry?
-    c.maxAge = _sessionLifeSeconds; // good for 1 hour
+    c.maxAge = this.maxSessionTime.inSeconds; // set cookie expiry time
     return c;
   }
 
@@ -113,14 +108,14 @@ class SimpleSessionManager extends SessionManager {
    * Called by the middleware to set up the session for downstream middlware and handlers.
    * This puts the session in the context
    */
-  shelf.Request prepareSession(shelf.Request request) {
+  shelf.Request loadSession(shelf.Request request) {
     var cookieMap = cookie.parseCookies(request.headers);
-    var sessionIdCookie = cookieMap[sessionCookieName];
-    _logger.finest("Looking for $sessionCookieName cookie value = $sessionIdCookie");
+    var sessionIdCookie = cookieMap[_sessionCookieName];
+    _logger.finest("Looking for $_sessionCookieName cookie value = $sessionIdCookie");
 
     var session = null;
     if (sessionIdCookie == null) {
-      _logger.fine("${sessionCookieName} cookie not found. Creating new session");
+      _logger.fine("${_sessionCookieName} cookie not found. Creating new session");
       session = _createSession();
     }
     else {
@@ -140,10 +135,10 @@ class SimpleSessionManager extends SessionManager {
   }
 
 
-  shelf.Response saveSession(shelf.Request request, shelf.Response response) {
+  shelf.Response storeSession(shelf.Request request, shelf.Response response) {
     var session = request.context[CTX_SESSION_KEY];
     _logger.finest("req context = ${request.context} Response context = ${response.context}");
-    var sessionIdCookie = makeSessionCookie(request,session);
+    var sessionIdCookie = _makeSessionCookie(request,session);
     _logger.finest("Saving sesssion cookie=$sessionIdCookie");
     var nr = response.change(headers: {
              'set-cookie': sessionIdCookie.toString()

@@ -3,7 +3,8 @@ import 'dart:io';
 
 /**
  * This is largely lifted from dart:io code so we can use it in shelf
- * todo: Replace this with wahatever cookie code comes in shelf
+ * todo: Replace this with wahatever cookie code comes in shelf.
+ * See [https://code.google.com/p/dart/issues/detail?id=18845]
  *
  */
 

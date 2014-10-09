@@ -34,6 +34,7 @@ Here is an example of usage (see example/session_example.dart)
 ### TO DO
 
 This is super simple, and there are lots of enhancements that should be made:
+
 - The session maintenance / timeout code is not efficient
 - This wont work in a multi-isolate environment (needs some of way
 of sharing session data between isolates)

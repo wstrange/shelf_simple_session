@@ -18,7 +18,8 @@ const String CTX_SESSION_KEY = 'shelf_session.simple_session';
  */
 Session session(shelf.Request req) {
   var session = req.context[CTX_SESSION_KEY] as Session;
-  if (session == null) throw new StateError("Session not found in context. This is probably a programming error. Did you forget to put the session middleware before others?");
+  if (session == null)
+    throw new StateError("Session not found in shelf context. This is probably a programming error. Did you forget to put the session middleware first in the chain?");
   return session;
 }
 
@@ -90,17 +91,27 @@ class Session extends MapBase {
 
 
 // Callback handler for Session life cycle events
-typedef void SessionCallback(Session);
+typedef void SessionCallbackEvent(Session);
 
 
 
 /**
- * SessionStore is responsible for retrieving and storing the session data
+ * SessionStore is responsible for retrieving and storing the session data.
+ * It also has life cycle handlers that can be invoked for different events.
+ * For example - to run a method when a session object has expired.
+ *
+ * The intent is that this will be subclassed with specific implementations.
+ * For example - a memory map based session store (The default here),
+ * or a memcache based store (just an example -not implemented!)
  *
  * Session Life Cycle events:
- *  -Rather than each Session object store pointers to lifecycle events, we store these
- * at the SessionManager level. This means that you can not have unique handlers per Session.
- * This should be OK- since the handler is passed in the Session object
+ * Rather than have each Session object store pointers to individual
+ * lifecycle event handlers, we store these
+ * at the SessionStore level. This means that you can not have unique handler per Session object.
+ * For example, you can't have a "fooDestroy" method for one session object, and
+ * a "barDestroy" method for another.
+ * This should be OK- since the handler is passed in the Session object it
+ * decide if it requires handling that is unique to the session object.
  *
  */
 abstract class SessionStore {
@@ -112,21 +123,21 @@ abstract class SessionStore {
   Duration get maxSessionTime => _maxSessionTime;
 
   // Optional Callback handlers to run on Session lifecycle events
-  SessionCallback _onDestroy;
-  SessionCallback _onTimeout;
+  SessionCallbackEvent _onDestroy;
+  SessionCallbackEvent _onTimeout;
 
-  SessionCallback get onTimeout => _onTimeout;
-  SessionCallback get onDestroy => _onDestroy;
+  SessionCallbackEvent get onTimeout => _onTimeout;
+  SessionCallbackEvent get onDestroy => _onDestroy;
 
 
   /**
    * Create a new [SessionStore]. Specify the maximum
    * time a session can be idle before it is destroyed, and the
    * maximum absolute time that a session can be alive for.
-   * Optional Session life cycle callbacks can be passed
+   * Optional Session life cycle callbacks can be set
    */
   SessionStore(this._maxSessionIdleTime, this._maxSessionTime,
-      {SessionCallback onTimeout, SessionCallback onDestroy}) {
+      {SessionCallbackEvent onTimeout, SessionCallbackEvent onDestroy}) {
     _onTimeout = onTimeout;
     _onDestroy = onDestroy;
    }
@@ -135,6 +146,7 @@ abstract class SessionStore {
   // Returns a new [shelf.Request] that has the [Session] added to the shelf context.
   // [loadSession] must be called before any downstream handlers can access the session
   shelf.Request loadSession(shelf.Request request);
+
   // Save the session state.
   // Returns a [shelf.Response]. The response may return additional data
   // to the client. For example - by setting a Cookie with the unique session id
@@ -167,7 +179,7 @@ abstract class SessionStore {
 shelf.Middleware sessionMiddleware(SessionStore sessionStore) {
    return (shelf.Handler innerHandler) {
     return (shelf.Request request) {
-      var r = sessionStore.loadSession(request);
+      var r = sessionStore.loadSession(request); // load the session into the context
       return new Future.sync(() => innerHandler(r)).then((shelf.Response response) {
         // persist session
         return sessionStore.storeSession(r, response);

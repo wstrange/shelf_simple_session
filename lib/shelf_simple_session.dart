@@ -4,16 +4,11 @@ import 'dart:async'; //timer
 import 'package:logging/logging.dart';
 import 'package:shelf_simple_session/cookie.dart' as cookie;
 import 'package:shelf_simple_session/session.dart';
-import 'dart:collection';
 
 
-// default name of session cookie we use to remember session state id
+
+// default session cookie name we use to remember session state id
 const String _SESSION_COOKIE = 'DARTSIMPLESESSION';
-
-var _logger = new Logger("shelf_simple_session");
-
-
-
 
 /**
  * A simple [SessionStore] that uses an in memory Map for session data. The Map is
@@ -25,6 +20,10 @@ var _logger = new Logger("shelf_simple_session");
  * todo: implement encrypted map entries
  */
 class SimpleSessionStore extends SessionStore {
+
+  var _logger = new Logger("shelf_simple_session");
+
+
   String _sessionCookieName;
   //String get sessionCookieName => _sessionCookieName;
   Timer _sessionTimer;
@@ -34,12 +33,33 @@ class SimpleSessionStore extends SessionStore {
   // todo:
   // Session expiry Map - sorted and keyed by Session expiry time.
   ///Map<DateTime,Session> _timeoutMap = new SplayTreeMap<DateTime,Session>();
+  ///
+
+  /**
+    * Create a new Simple Store with optional overrides for
+    * [sessionIdleTime] - the time the session can be idle,
+    * [sessionLifeTime]  the maximum time the session stays alive for
+    * [cookieName] the name of the cookie that will be used to store the session id. Defaults to
+    * DARTSIMPLESESSION.
+    *
+    */
+
+   SimpleSessionStore({Duration sessionIdleTime: const Duration(minutes:60),
+               Duration sessionLifeTime : const Duration(hours:4),
+               String cookieName : _SESSION_COOKIE,
+               SessionCallbackEvent onTimeout,
+               SessionCallbackEvent onDestroy})
+               :super(sessionIdleTime, sessionLifeTime, onTimeout: onTimeout, onDestroy:onDestroy) {
+     _sessionCookieName = cookieName;
+     _sessionTimer = _startSessionTimer();
+   }
 
 
-   static var DURATION = const Duration(seconds:60);
+  // How often the timer runs to clean up the session store
+   static Duration _MAINTENANCE_TIMER_DURATION = const Duration(seconds:60);
 
    Timer _startSessionTimer() {
-     return new Timer.periodic(DURATION,  (Timer t) => _maintainSessions() );
+     return new Timer.periodic(_MAINTENANCE_TIMER_DURATION,  (Timer t) => _maintainSessions() );
    }
 
 
@@ -48,35 +68,24 @@ class SimpleSessionStore extends SessionStore {
    // expiration date. The timer should run only when the next session is set to expire
   _maintainSessions() {
     _logger.finest("maintainSession");
-    _sessionMap.keys
-      .where( (k) => _sessionMap[k].isExpired())
-      .toList()
-      .forEach( (s) => destroySession(s));
+
+    // note Dart Maps can not be modified while iterating - so we first create
+    // a list of all the session id's that have expired.
+    var expiredList =
+      _sessionMap.keys.where( (k) => _sessionMap[k].isExpired())
+        .toList();
+    // now we can purge those sessions
+    _logger.finest("Expired session ids: ${expiredList}");
+    expiredList.forEach( (id) => destroySession(_sessionMap[id]));
   }
 
 
-  /**
-   * Create a new Simple Store with optional overrides for
-   * [sessionIdleTime] - the time the session can be idle,
-   * [sessionLifeTime]  the maximum time the session stays alive for
-   * [cookieName] the name of the cookie that will be used to store the session id. Defaults to
-   * DARTSIMPLESESSION.
-   *
-   */
 
-  SimpleSessionStore({Duration sessionIdleTime: const Duration(seconds:60),
-              Duration sessionLifeTime : const Duration(seconds:3600),
-              String cookieName : _SESSION_COOKIE,
-              SessionCallback onTimeout,
-              SessionCallback onDestroy})
-              :super(sessionIdleTime, sessionLifeTime, onTimeout: onTimeout, onDestroy:onDestroy) {
-    _sessionCookieName = cookieName;
-    _sessionTimer = _startSessionTimer();
-  }
 
-  // todo - should this set a cookie with 0 expiry time?
+  // todo - should this also set a cookie with 0 expiry time?
   destroySession(Session session) {
     var sess = this._sessionMap.remove(session.id);
+    //run destroy hook if present
     if( sess != null ) {
       if( this.onDestroy != null)
         this.onDestroy(sess);
@@ -140,10 +149,8 @@ class SimpleSessionStore extends SessionStore {
     _logger.finest("req context = ${request.context} Response context = ${response.context}");
     var sessionIdCookie = _makeSessionCookie(request,session);
     _logger.finest("Saving sesssion cookie=$sessionIdCookie");
-    var nr = response.change(headers: {
-             'set-cookie': sessionIdCookie.toString()
-           });
-    return nr;
+    return response.change(headers: {
+             'set-cookie': sessionIdCookie.toString() });
   }
 
 }

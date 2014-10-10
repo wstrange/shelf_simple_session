@@ -2,10 +2,8 @@ import 'package:shelf/shelf.dart' as shelf;
 import 'dart:io'; // for Cookie
 import 'dart:async'; //timer
 import 'package:logging/logging.dart';
-import 'package:shelf_simple_session/cookie.dart' as cookie;
-import 'package:shelf_simple_session/session.dart';
-
-
+import 'cookie.dart' as cookie;
+import 'session.dart';
 
 // default session cookie name we use to remember session state id
 const String _SESSION_COOKIE = 'DARTSIMPLESESSION';
@@ -44,7 +42,7 @@ class SimpleSessionStore extends SessionStore {
     *
     */
 
-   SimpleSessionStore({Duration sessionIdleTime: const Duration(minutes:60),
+   SimpleSessionStore({Duration sessionIdleTime: const Duration(minutes:30),
                Duration sessionLifeTime : const Duration(hours:4),
                String cookieName : _SESSION_COOKIE,
                SessionCallbackEvent onTimeout,
@@ -67,20 +65,22 @@ class SimpleSessionStore extends SessionStore {
    // todo: this is simple but terribly inefficient. Use a better data structure that is sorted by
    // expiration date. The timer should run only when the next session is set to expire
   _maintainSessions() {
-    _logger.finest("maintainSession");
+    //_logger.finest("maintainSession");
 
     // note Dart Maps can not be modified while iterating - so we first create
     // a list of all the session id's that have expired.
-    var expiredList =
-      _sessionMap.keys.where( (k) => _sessionMap[k].isExpired())
-        .toList();
+
+    var expiredList = [];
+
+    _sessionMap.forEach( (id,session)  {
+      if( session.isExpired() )
+        expiredList.add(session);
+    });
+
     // now we can purge those sessions
     _logger.finest("Expired session ids: ${expiredList}");
-    expiredList.forEach( (id) => destroySession(_sessionMap[id]));
+    expiredList.forEach( (session) => destroySession(session));
   }
-
-
-
 
   // todo - should this also set a cookie with 0 expiry time?
   destroySession(Session session) {
@@ -130,7 +130,7 @@ class SimpleSessionStore extends SessionStore {
     else {
       session = _sessionMap[sessionIdCookie.value];
       if( session == null ) {
-        _logger.finest("Session cookie found, but no session found. Maybe server was restarted? Creating new session");
+        _logger.finest("Brower sent session cookie, but no session found. Creating new session");
         session = _createSession();
       }
       else
@@ -142,7 +142,6 @@ class SimpleSessionStore extends SessionStore {
     var r = request.change(context: {CTX_SESSION_KEY: session});
     return r;
   }
-
 
   shelf.Response storeSession(shelf.Request request, shelf.Response response) {
     var session = request.context[CTX_SESSION_KEY];

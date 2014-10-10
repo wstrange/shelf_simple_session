@@ -1,8 +1,6 @@
 import 'package:shelf/shelf_io.dart' as io;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf_simple_session/shelf_simple_session.dart';
-import 'package:shelf_simple_session/session.dart';
-
 import 'dart:io';
 import 'package:logging/logging.dart';
 

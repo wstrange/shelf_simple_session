@@ -79,13 +79,13 @@ class Session extends MapBase {
   void clear() => _data.clear();
   Iterable get keys => _data.keys;
 
-  String toString() => 'Session id:$id $_data';
+  String toString() => 'Session id:$id expires: ${_nextExpiryTime()} $_data';
 
-  // The time the session expires - the lessor of idle time and expirty time
+  // The time the session expires - the lessor of idle time and expiry time
   DateTime _nextExpiryTime() => (_idleExpiryTime.isBefore(_sessionExpiryTime) ? _idleExpiryTime : _sessionExpiryTime);
 
   // return true if this session has expired
-  bool isExpired() => _nextExpiryTime().isAfter(new DateTime.now());
+  bool isExpired() => _nextExpiryTime().isBefore(new DateTime.now());
 }
 
 
